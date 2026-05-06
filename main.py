@@ -13,132 +13,138 @@ client = genai.Client(api_key=api_key)
 class HikayeUygulamasi:
     def __init__(self, root):
         self.root = root
-        self.root.title("AI Hikaye Atölyesi - Koleksiyon")
-        self.root.geometry("600x800") # Biraz daha uzun bir ekran iyi olur
+        self.root.title("AI Hikaye Atölyesi - Görsel & Kategorili")
+        self.root.geometry("600x850")
         
+        # Tema Renk Sözlüğü (Görselleştirme için)
+        self.temalar = {
+            "Bilim Kurgu": {"bg": "#E3F2FD", "fg": "#0D47A1"}, # Mavi tonları
+            "Korku": {"bg": "#263238", "fg": "#FF5252"},       # Siyah-Kırmızı
+            "Macera": {"bg": "#F1F8E9", "fg": "#33691E"},      # Yeşil tonları
+            "Dram": {"bg": "#F3E5F5", "fg": "#4A148C"},        # Mor tonları
+            "Komedi": {"bg": "#FFFDE7", "fg": "#F57F17"},      # Sarı/Turuncu
+            "Varsayılan": {"bg": "#F9F9F9", "fg": "#333333"}
+        }
+
         self.veritabani_hazirla()
         self.arayuz_olustur()
         self.veritabani_listele()
 
     def veritabani_hazirla(self):
         conn = sqlite3.connect('stories.db')
+        # Kategori (category) sütununu ekledik
         conn.execute('''CREATE TABLE IF NOT EXISTS stories 
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                       title TEXT, 
-                      content TEXT)''')
+                      content TEXT,
+                      category TEXT)''')
         conn.commit()
         conn.close()
 
     def arayuz_olustur(self):
-        # Üst Başlık
-        tk.Label(self.root, text="📖 AI Hikaye Atölyesi", font=("Arial", 18, "bold"), fg="#2E7D32").pack(pady=10)
+        tk.Label(self.root, text="🎭 Hikaye Atölyesi", font=("Arial", 18, "bold")).pack(pady=10)
         
-        # Giriş Alanı
         frame_giris = tk.Frame(self.root)
         frame_giris.pack(pady=10, padx=20, fill="x")
         
-        tk.Label(frame_giris, text="Yeni Hikaye Konusu:", font=("Arial", 10)).pack(side="left")
+        tk.Label(frame_giris, text="Konu:").pack(side="left")
         self.entry_konu = tk.Entry(frame_giris, font=("Arial", 12))
         self.entry_konu.pack(side="left", padx=10, expand=True, fill="x")
         
-        self.btn_uret = tk.Button(frame_giris, text="✍️ Hikaye Üret", command=self.hikaye_uret, bg="#4CAF50", fg="white", font=("Arial", 10, "bold"))
+        self.btn_uret = tk.Button(frame_giris, text="✨ Üret", command=self.hikaye_uret, bg="#4CAF50", fg="white")
         self.btn_uret.pack(side="right")
 
-        # Hikaye Görüntüleme Alanı
-        self.text_hikaye = tk.Text(self.root, height=15, font=("Segoe UI", 11), wrap="word", padx=15, pady=15, bg="#F9F9F9")
+        # Kategori Bilgi Etiketi
+        self.lbl_kategori = tk.Label(self.root, text="Tür: -", font=("Arial", 10, "bold"))
+        self.lbl_kategori.pack()
+
+        self.text_hikaye = tk.Text(self.root, height=15, font=("Segoe UI", 11), wrap="word", padx=15, pady=15)
         self.text_hikaye.pack(pady=10, padx=20, fill="both", expand=True)
 
-        # Kontrol Butonları (Temizle vb.)
-        self.btn_temizle = tk.Button(self.root, text="Ekranı Temizle", command=self.ekrani_temizle, font=("Arial", 9))
-        self.btn_temizle.pack(pady=5)
-
-        # Kayıtlı Storyler Listesi
-        tk.Label(self.root, text="📚 Hikaye Kütüphanem (Tıklayıp Oku)", font=("Arial", 10, "bold")).pack(pady=(10, 0))
-        
-        # Listbox ve Scrollbar
-        frame_liste = tk.Frame(self.root)
-        frame_liste.pack(pady=10, padx=20, fill="both")
-        
-        self.scrollbar = tk.Scrollbar(frame_liste)
-        self.scrollbar.pack(side="right", fill="y")
-
-        self.listbox_hikayeler = tk.Listbox(frame_liste, height=6, font=("Arial", 10), yscrollcommand=self.scrollbar.set)
-        self.listbox_hikayeler.pack(side="left", fill="both", expand=True)
-        self.scrollbar.config(command=self.listbox_hikayeler.yview)
-        
+        # Liste Bölümü
+        tk.Label(self.root, text="📚 Kütüphane", font=("Arial", 10, "bold")).pack()
+        self.listbox_hikayeler = tk.Listbox(self.root, height=8)
+        self.listbox_hikayeler.pack(pady=10, padx=20, fill="x")
         self.listbox_hikayeler.bind('<<ListboxSelect>>', self.hikaye_getir)
 
-    def ekrani_temizle(self):
-        self.entry_konu.delete(0, tk.END)
-        self.text_hikaye.delete("1.0", tk.END)
+    def tema_uygula(self, kategori):
+        # Tür anahtarda yoksa varsayılanı kullan
+        tema = self.temalar.get(kategori, self.temalar["Varsayılan"])
+        self.text_hikaye.config(bg=tema["bg"], fg=tema["fg"])
+        self.lbl_kategori.config(text=f"Tür: {kategori}", fg=tema["fg"])
 
     def hikaye_uret(self):
         konu = self.entry_konu.get()
-        if not konu:
-            messagebox.showwarning("Uyarı", "Lütfen yeni bir konu girin!")
-            return
+        if not konu: return
 
-        self.btn_uret.config(text="🤖 Yazıyor...", state="disabled")
+        self.btn_uret.config(text="🤖 Yazılıyor...", state="disabled")
         self.root.update()
 
         try:
-            # AI'ya tam özgürlük veriyoruz
-            prompt = (f"'{konu}' konusu üzerine yaratıcı bir hikaye yaz. "
-                      "Zamanı, mekanı ve türü tamamen sen seç. "
-                      "Hikayenin en başına 'BAŞLIK: [Buraya Başlık]' eklemeyi unutma.")
+            # AI'dan artık Kategori de istiyoruz
+            prompt = (f"Konu: {konu}. Bu konuyla ilgili bir hikaye yaz. "
+                      "Yanıtın ŞU FORMATTA OLSUN:\n"
+                      "KATEGORİ: [Bilim Kurgu, Macera, Korku, Dram veya Komedi seçeneklerinden biri]\n"
+                      "BAŞLIK: [Hikaye Başlığı]\n"
+                      "İÇERİK: [Hikaye Metni]")
             
             response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-            tam_metin = response.text
+            raw_text = response.text
 
-            if "BAŞLIK:" in tam_metin:
-                parcalar = tam_metin.split("\n", 1)
-                baslik = parcalar[0].replace("BAŞLIK:", "").strip()
-                icerik = parcalar[1].strip()
-            else:
-                baslik = konu[:20] + "..."
-                icerik = tam_metin
+            # Metni parçalama (Hata payını azaltmak için satır satır bakıyoruz)
+            kategori, baslik, icerik = "Dram", konu, raw_text
+            lines = raw_text.split("\n")
+            
+            for line in lines:
+                if line.startswith("KATEGORİ:"): kategori = line.replace("KATEGORİ:", "").strip()
+                elif line.startswith("BAŞLIK:"): baslik = line.replace("BAŞLIK:", "").strip()
+            
+            if "İÇERİK:" in raw_text:
+                icerik = raw_text.split("İÇERİK:")[1].strip()
 
-            # Ekrana yazdır
             self.text_hikaye.delete("1.0", tk.END)
-            self.text_hikaye.insert(tk.END, f"🌟 {baslik.upper()} 🌟\n\n{icerik}")
-
-            # Veritabanına yeni story'yi ekle
-            self.veritabani_kaydet(baslik, icerik)
+            self.text_hikaye.insert(tk.END, icerik)
+            
+            # Görselleştirme ve Kayıt
+            self.tema_uygula(kategori)
+            self.veritabani_kaydet(baslik, icerik, kategori)
             self.veritabani_listele()
             
         except Exception as e:
-            messagebox.showerror("Hata", f"Yapay zeka ile bağlantı kurulamadı: {e}")
+            messagebox.showerror("Hata", str(e))
         finally:
-            self.btn_uret.config(text="✍️ Hikaye Üret", state="normal")
+            self.btn_uret.config(text="✨ Üret", state="normal")
 
-    def veritabani_kaydet(self, baslik, icerik):
+    def veritabani_kaydet(self, baslik, icerik, kategori):
         conn = sqlite3.connect('stories.db')
-        conn.execute('INSERT INTO stories (title, content) VALUES (?, ?)', (baslik, icerik))
+        conn.execute('INSERT INTO stories (title, content, category) VALUES (?, ?, ?)', (baslik, icerik, kategori))
         conn.commit()
         conn.close()
 
     def veritabani_listele(self):
         self.listbox_hikayeler.delete(0, tk.END)
         conn = sqlite3.connect('stories.db')
-        cursor = conn.execute('SELECT id, title FROM stories ORDER BY id DESC')
+        cursor = conn.execute('SELECT id, title, category FROM stories ORDER BY id DESC')
         for row in cursor:
-            # Story'leri daha şık listele
-            self.listbox_hikayeler.insert(tk.END, f"ID: {row[0]} | {row[1]}")
+            # Listede türü de gösteriyoruz
+            self.listbox_hikayeler.insert(tk.END, f"[{row[2]}] {row[1]}")
         conn.close()
 
     def hikaye_getir(self, event):
         selection = self.listbox_hikayeler.curselection()
         if selection:
             item = self.listbox_hikayeler.get(selection[0])
-            # ID kısmını ayıklıyoruz (ID: 5 | Başlık formatından)
-            hikaye_id = item.split(" | ")[0].replace("ID: ", "")
-            
+            # Başlığın sonundaki ID'yi bulmak yerine başlık eşleşmesi yapabiliriz
+            # Ama en güvenlisi liste indeksinden gitmektir, şimdilik basitleştirelim:
+            idx = selection[0]
             conn = sqlite3.connect('stories.db')
-            cursor = conn.execute('SELECT title, content FROM stories WHERE id = ?', (hikaye_id,))
-            row = cursor.fetchone()
-            if row:
-                self.text_hikaye.delete("1.0", tk.END)
-                self.text_hikaye.insert(tk.END, f"🌟 {row[0].upper()} 🌟\n\n{row[1]}")
+            cursor = conn.execute('SELECT title, content, category FROM stories ORDER BY id DESC')
+            rows = cursor.fetchall()
+            row = rows[idx]
+            
+            self.text_hikaye.delete("1.0", tk.END)
+            self.text_hikaye.insert(tk.END, row[1])
+            self.tema_uygula(row[2])
             conn.close()
 
 if __name__ == "__main__":
